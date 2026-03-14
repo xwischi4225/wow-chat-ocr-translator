@@ -29,6 +29,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { DisplayFeed } from "@/components/DisplayFeed";
+import { ErrorLogModal } from "@/components/ErrorLogModal";
+import type { ErrorLogEntry } from "@/components/ErrorLogModal";
 import { RegionCanvas } from "@/components/RegionCanvas";
 import { SettingsModal } from "@/components/SettingsModal";
 import { TranslationFeed } from "@/components/TranslationFeed";
@@ -88,6 +90,25 @@ function MainApp() {
   const feedEntriesRef = useRef<FeedEntry[]>([]);
   const [targetLanguage, setTargetLanguage] = useState<TargetLang>("en");
 
+  // --- Error log ---
+  const [errorLog, setErrorLog] = useState<ErrorLogEntry[]>([]);
+
+  const addError = useCallback(
+    (stage: string, message: string, detail?: string) => {
+      setErrorLog((prev) => [
+        {
+          id: `err-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          timestamp: new Date(),
+          stage,
+          message,
+          detail,
+        },
+        ...prev,
+      ]);
+    },
+    [],
+  );
+
   // --- BroadcastChannel ---
   const channelRef = useRef<BroadcastChannel | null>(null);
 
@@ -144,13 +165,14 @@ function MainApp() {
     }).catch((err) => {
       setOcrStatus("error");
       setOcrStatusMsg(err.message);
+      addError("OCR", `Init failed: ${err.message}`, err.stack);
       toast.error(`OCR init failed: ${err.message}`);
     });
 
     return () => {
       terminateOcrWorker();
     };
-  }, [includeEnglish]);
+  }, [includeEnglish, addError]);
 
   // Keyboard shortcut: Ctrl+Shift+Y
   useEffect(() => {
@@ -216,7 +238,14 @@ function MainApp() {
               e.id === id ? { ...e, translated, isLoading: false } : e,
             ),
           );
-        } catch (_err) {
+        } catch (translateErr) {
+          const err = translateErr as Error;
+          const detail = err.message || String(translateErr);
+          addError(
+            "Translation",
+            "Failed to translate text",
+            `Text: ${text.slice(0, 200)}\nError: ${detail}`,
+          );
           setFeedEntries((prev) =>
             prev.map((e) =>
               e.id === id
@@ -226,13 +255,19 @@ function MainApp() {
           );
         }
       } catch (err) {
-        toast.error(`OCR error: ${(err as Error).message}`);
+        const msg = (err as Error).message;
+        addError(
+          "OCR",
+          `Frame recognition error: ${msg}`,
+          (err as Error).stack,
+        );
+        toast.error(`OCR error: ${msg}`);
       } finally {
         isProcessingRef.current = false;
         setOcrStatus("ready");
       }
     },
-    [translateText, usePreprocessing],
+    [translateText, usePreprocessing, addError],
   );
 
   // Live mode interval
@@ -347,7 +382,8 @@ function MainApp() {
 
   return (
     <TooltipProvider>
-      <div className="min-h-screen bg-background flex flex-col">
+      {/* h-screen + overflow-hidden locks the layout to the viewport */}
+      <div className="h-screen overflow-hidden bg-background flex flex-col">
         {/* Top bar */}
         <header className="h-12 border-b border-border/50 flex items-center justify-between px-4 bg-card/30 shrink-0">
           <div className="flex items-center gap-3">
@@ -381,15 +417,16 @@ function MainApp() {
                 {ocrStatusMsg || ocrStatus.toUpperCase()}
               </span>
             </div>
+
+            {/* Error log button */}
+            <ErrorLogModal entries={errorLog} onClear={() => setErrorLog([])} />
+
             <SettingsModal />
           </div>
         </header>
 
-        {/* Main content */}
-        <main
-          className="flex-1 flex overflow-hidden"
-          style={{ height: "calc(100vh - 80px)" }}
-        >
+        {/* Main content — flex-1 fills remaining height; panels scroll independently */}
+        <main className="flex-1 flex overflow-hidden min-h-0">
           {/* LEFT: Capture Panel */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -486,7 +523,7 @@ function MainApp() {
               </div>
             </div>
 
-            {/* Video preview area */}
+            {/* Video preview area — flex-1 + min-h-0 ensures it fills without blowing out */}
             <div className="flex-1 relative bg-black/40 overflow-hidden scanlines min-h-0">
               {!isCapturing ? (
                 <div
@@ -658,12 +695,12 @@ function MainApp() {
             </div>
           </motion.div>
 
-          {/* RIGHT: Translation Feed */}
+          {/* RIGHT: Translation Feed — also overflow-hidden so it scrolls internally */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
-            className="flex-1 flex flex-col overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden min-h-0"
           >
             <TranslationFeed
               entries={feedEntries}

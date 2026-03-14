@@ -18,15 +18,9 @@ export function useSetConfig() {
   const { actor } = useActor();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      apiKey,
-      gcpProject,
-    }: {
-      apiKey: string;
-      gcpProject: string;
-    }) => {
+    mutationFn: async ({ apiKey }: { apiKey: string }) => {
       if (!actor) throw new Error("Actor not available");
-      return actor.setConfig(apiKey, gcpProject);
+      return actor.setConfig(apiKey, "");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["configured"] });

@@ -9,32 +9,37 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useGetConfigured, useSetConfig } from "@/hooks/useQueries";
-import { AlertCircle, CheckCircle2, Loader2, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  Settings,
+} from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 export function SettingsModal() {
   const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [gcpProject, setGcpProject] = useState("");
 
   const { data: isConfigured, isLoading: checkingConfig } = useGetConfigured();
   const { mutate: setConfig, isPending } = useSetConfig();
 
   const handleSave = () => {
-    if (!apiKey.trim() || !gcpProject.trim()) {
-      toast.error("Both API Key and GCP Project are required");
+    if (!apiKey.trim()) {
+      toast.error("API Key is required");
       return;
     }
     setConfig(
-      { apiKey: apiKey.trim(), gcpProject: gcpProject.trim() },
+      { apiKey: apiKey.trim() },
       {
         onSuccess: () => {
-          toast.success("Configuration saved successfully");
+          toast.success("API key saved");
           setOpen(false);
         },
         onError: (err) => {
-          toast.error(`Failed to save config: ${err.message}`);
+          toast.error(`Failed to save: ${err.message}`);
         },
       },
     );
@@ -66,7 +71,7 @@ export function SettingsModal() {
       >
         <DialogHeader>
           <DialogTitle className="font-display text-lg text-primary">
-            Translation API Configuration
+            Google Translation API
           </DialogTitle>
         </DialogHeader>
 
@@ -85,8 +90,8 @@ export function SettingsModal() {
               <AlertCircle className="h-4 w-4" />
             )}
             {isConfigured
-              ? "API configured and ready"
-              : "Not configured — translation will fail"}
+              ? "API key configured — ready to translate"
+              : "No API key — translation will fail"}
           </div>
 
           <div className="space-y-2">
@@ -94,7 +99,7 @@ export function SettingsModal() {
               htmlFor="apiKey"
               className="text-muted-foreground text-xs uppercase tracking-wider"
             >
-              Google Cloud API Key
+              Google API Key
             </Label>
             <Input
               id="apiKey"
@@ -107,33 +112,27 @@ export function SettingsModal() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label
-              htmlFor="gcpProject"
-              className="text-muted-foreground text-xs uppercase tracking-wider"
-            >
-              GCP Project ID
-            </Label>
-            <Input
-              id="gcpProject"
-              type="text"
-              value={gcpProject}
-              onChange={(e) => setGcpProject(e.target.value)}
-              placeholder="my-project-123456"
-              className="bg-input/50 border-border/60 font-mono text-sm"
-              data-ocid="settings.secondary_button"
-            />
-          </div>
-
-          <div className="text-xs text-muted-foreground bg-muted/20 rounded-md p-3 space-y-1">
-            <p className="font-medium text-foreground/70">
-              Setup instructions:
+          <div className="text-xs text-muted-foreground bg-muted/20 rounded-md p-3 space-y-1.5">
+            <p className="font-medium text-foreground/70">Setup (2 steps):</p>
+            <p>
+              1. Enable <strong>Cloud Translation API</strong> (v2 Basic) in
+              your{" "}
+              <a
+                href="https://console.cloud.google.com/apis/library/translate.googleapis.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline-offset-2 hover:underline inline-flex items-center gap-0.5"
+              >
+                GCP Console <ExternalLink className="h-3 w-3" />
+              </a>
             </p>
             <p>
-              1. Enable <strong>Cloud Translation API v3</strong> in GCP Console
+              2. Go to <strong>Credentials &rarr; Create API Key</strong> and
+              optionally restrict it to <strong>Cloud Translation API</strong>.
             </p>
-            <p>2. Create an API key with Translation API permissions</p>
-            <p>3. Enter your project ID (not project name)</p>
+            <p className="text-muted-foreground/60 pt-1">
+              Free tier: 500k chars/month. No OAuth or service account needed.
+            </p>
           </div>
         </div>
 
@@ -152,7 +151,7 @@ export function SettingsModal() {
             data-ocid="settings.save_button"
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Configuration
+            Save
           </Button>
         </div>
       </DialogContent>

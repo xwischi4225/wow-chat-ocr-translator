@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -21,7 +20,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef } from "react";
 import { toast } from "sonner";
 
 interface Props {
@@ -43,8 +41,6 @@ export function TranslationFeed({
   onTargetLanguageChange,
   onOpenDisplayWindow,
 }: Props) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   const handleCopyAll = () => {
     if (entries.length === 0) {
       toast.info("No entries to copy");
@@ -68,7 +64,7 @@ export function TranslationFeed({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col overflow-hidden h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 shrink-0">
         <div className="flex items-center gap-2">
@@ -161,8 +157,8 @@ export function TranslationFeed({
         </div>
       </div>
 
-      {/* Feed entries */}
-      <ScrollArea className="flex-1" ref={scrollRef as never}>
+      {/* Feed entries — independently scrollable */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-3 space-y-2.5">
           <AnimatePresence initial={false}>
             {entries.length === 0 ? (
@@ -241,7 +237,7 @@ export function TranslationFeed({
             )}
           </AnimatePresence>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
