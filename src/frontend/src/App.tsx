@@ -14,6 +14,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Activity,
+  Download,
   Info,
   Loader2,
   Monitor,
@@ -462,6 +463,26 @@ function MainApp() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Download local package button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href="/wow-chat-ocr-translator.zip"
+                  download
+                  data-ocid="download.primary_button"
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold bg-primary/15 border border-primary/40 text-primary hover:bg-primary/25 hover:border-primary/70 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download Local Package (.zip)
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Download the local Docker package to run this app on your PC
+                </p>
+              </TooltipContent>
+            </Tooltip>
+
             {/* OCR status */}
             <div
               className={`flex items-center gap-1.5 text-xs ${ocrStatusColor}`}

@@ -7,6 +7,23 @@ interface Props {
   onRegionChange: (region: Region) => void;
 }
 
+function getVideoRect(
+  containerW: number,
+  containerH: number,
+  videoW: number,
+  videoH: number,
+) {
+  if (videoW === 0 || videoH === 0) {
+    return { ox: 0, oy: 0, rw: containerW, rh: containerH };
+  }
+  const scale = Math.min(containerW / videoW, containerH / videoH);
+  const rw = videoW * scale;
+  const rh = videoH * scale;
+  const ox = (containerW - rw) / 2;
+  const oy = (containerH - rh) / 2;
+  return { ox, oy, rw, rh };
+}
+
 export function RegionCanvas({ videoRef, region, onRegionChange }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDragging = useRef(false);
@@ -41,19 +58,25 @@ export function RegionCanvas({ videoRef, region, onRegionChange }: Props) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.fillRect(0, 0, cw, ch);
 
-      const x = r.x * cw;
-      const y = r.y * ch;
-      const w = r.w * cw;
-      const h = r.h * ch;
+      // Get video dimensions to compute letterbox offset
+      const video = videoRef.current;
+      const vw = video?.videoWidth ?? 0;
+      const vh = video?.videoHeight ?? 0;
+      const { ox, oy, rw: vrw, rh: vrh } = getVideoRect(cw, ch, vw, vh);
+
+      const rx = ox + r.x * vrw;
+      const ry = oy + r.y * vrh;
+      const rWidth = r.w * vrw;
+      const rHeight = r.h * vrh;
 
       // Clear selected region
-      ctx.clearRect(x, y, w, h);
+      ctx.clearRect(rx, ry, rWidth, rHeight);
 
       // Gold dashed border
       ctx.strokeStyle = "rgba(255, 215, 0, 0.9)";
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 4]);
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(rx, ry, rWidth, rHeight);
       ctx.setLineDash([]);
 
       // Corner markers
@@ -61,10 +84,10 @@ export function RegionCanvas({ videoRef, region, onRegionChange }: Props) {
       ctx.strokeStyle = "rgba(255, 215, 0, 1)";
       ctx.lineWidth = 3;
       const corners = [
-        [x, y, 1, 1],
-        [x + w, y, -1, 1],
-        [x, y + h, 1, -1],
-        [x + w, y + h, -1, -1],
+        [rx, ry, 1, 1],
+        [rx + rWidth, ry, -1, 1],
+        [rx, ry + rHeight, 1, -1],
+        [rx + rWidth, ry + rHeight, -1, -1],
       ];
       for (const [cx, cy, dx, dy] of corners) {
         ctx.beginPath();
@@ -75,19 +98,16 @@ export function RegionCanvas({ videoRef, region, onRegionChange }: Props) {
       }
 
       // Dimension label
-      const video = videoRef.current;
       if (video && video.videoWidth > 0) {
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
         const pw = Math.round(r.w * vw);
         const ph = Math.round(r.h * vh);
         const label = `${pw}×${ph}px`;
         ctx.font = "bold 11px JetBrains Mono, monospace";
         const textW = ctx.measureText(label).width;
         ctx.fillStyle = "rgba(0,0,0,0.75)";
-        ctx.fillRect(x, y - 22, textW + 10, 18);
+        ctx.fillRect(rx, ry - 22, textW + 10, 18);
         ctx.fillStyle = "rgba(255, 215, 0, 0.95)";
-        ctx.fillText(label, x + 5, y - 8);
+        ctx.fillText(label, rx + 5, ry - 8);
       }
     } else {
       // Crosshair hint when no region
@@ -124,9 +144,17 @@ export function RegionCanvas({ videoRef, region, onRegionChange }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
+    const ex = e.clientX - rect.left;
+    const ey = e.clientY - rect.top;
+
+    const video = videoRef.current;
+    const vw = video?.videoWidth ?? 0;
+    const vh = video?.videoHeight ?? 0;
+    const { ox, oy, rw, rh } = getVideoRect(rect.width, rect.height, vw, vh);
+
     return {
-      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+      x: Math.max(0, Math.min(1, (ex - ox) / rw)),
+      y: Math.max(0, Math.min(1, (ey - oy) / rh)),
     };
   };
 

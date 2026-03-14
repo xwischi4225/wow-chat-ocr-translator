@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WoW Chat OCR Translator</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  #topbar { background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #0f3460; flex-shrink: 0; }
+  #topbar h1 { font-size: 14px; color: #e2b96f; font-weight: bold; margin-right: auto; }
+  button { background: #0f3460; color: #e0e0e0; border: 1px solid #1a4a7a; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #1a4a7a; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.active { background: #e2b96f; color: #1a1a2e; border-color: #e2b96f; }
+  button.danger { background: #7a1a1a; border-color: #a02020; }
+  button.danger.has-errors { background: #c0392b; border-color: #e74c3c; }
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #left { width: 360px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid #0f3460; padding: 12px; gap: 10px; overflow-y: auto; }
+  #right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .section { background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 10px; }
+  .section h3 { font-size: 11px; text-transform: uppercase; color: #8899aa; margin-bottom: 8px; letter-spacing: 0.5px; }
+  #preview-canvas { width: 100%; height: 140px; background: #0a0a1a; border-radius: 4px; display: block; object-fit: contain; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  label { font-size: 12px; color: #8899aa; }
+  select, input[type=number], input[type=text], input[type=password] { background: #0f3460; color: #e0e0e0; border: 1px solid #1a4a7a; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+  input[type=number] { width: 60px; }
+  input[type=text], input[type=password] { flex: 1; }
+  #feed-header { background: #16213e; padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #0f3460; flex-shrink: 0; }
+  #feed-header span { font-size: 12px; color: #8899aa; margin-right: auto; }
+  #feed { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .chat-row { background: #16213e; border: 1px solid #0f3460; border-radius: 4px; padding: 8px 10px; position: relative; }
+  .chat-row:hover { border-color: #e2b96f44; }
+  .chat-row .original { color: #e2b96f; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .chat-row .translated { color: #a8d8a8; font-size: 13px; margin-top: 4px; padding-left: 12px; white-space: pre-wrap; word-break: break-word; }
+  .chat-row .translated::before { content: '\2192 '; color: #4a7a4a; }
+  .chat-row .ts { font-size: 10px; color: #556677; margin-top: 4px; }
+  .chat-row .copy-btn { position: absolute; top: 6px; right: 6px; display: none; padding: 2px 6px; font-size: 10px; }
+  .chat-row:hover .copy-btn { display: block; }
+  #status { font-size: 11px; color: #8899aa; }
+  #region-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); cursor: crosshair; z-index: 9999; display: none; }
+  #region-rect { position: fixed; border: 2px solid #e2b96f; background: rgba(226,185,111,0.1); pointer-events: none; display: none; }
+  .fps-display { font-size: 11px; color: #556677; }
+  #modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 9998; display: none; align-items: center; justify-content: center; }
+  #modal-box { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; width: 480px; max-height: 70vh; display: flex; flex-direction: column; gap: 10px; }
+  #modal-box h3 { color: #e2b96f; font-size: 14px; }
+  #modal-content { overflow-y: auto; font-size: 11px; color: #cc6666; white-space: pre-wrap; word-break: break-all; background: #0a0a1a; padding: 10px; border-radius: 4px; flex: 1; }
+  #modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>WoW Chat OCR Translator</h1>
+  <span id="status">Idle</span>
+  <button id="errBtn" class="danger" onclick="openErrors()">Errors (0)</button>
+</div>
+
+<div id="main">
+  <div id="left">
+    <div class="section">
+      <h3>Screen Capture</h3>
+      <canvas id="preview-canvas"></canvas>
+      <div class="row" style="margin-top:8px">
+        <button id="captureBtn" onclick="startCapture()">Start Capture</button>
+        <button onclick="selectRegion()">Select Region</button>
+        <span class="fps-display" id="fpsDisplay"></span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Region Presets</h3>
+      <div class="row">
+        <select id="presetSelect" style="flex:1"></select>
+        <button onclick="loadPreset()">Load</button>
+        <button onclick="savePreset()">Save</button>
+        <button onclick="deletePreset()">Del</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label>Name:</label>
+        <input type="text" id="presetName" placeholder="e.g. WoW 3440x1440" style="flex:1">
+      </div>
+      <div class="row" style="margin-top:4px">
+        <label>X:</label><input type="number" id="rx" value="0">
+        <label>Y:</label><input type="number" id="ry" value="0">
+        <label>W:</label><input type="number" id="rw" value="800">
+        <label>H:</label><input type="number" id="rh" value="200">
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>OCR Settings</h3>
+      <div class="row">
+        <label>Language:</label>
+        <select id="ocrLang">
+          <option value="chi_sim+chi_tra">Simplified + Traditional</option>
+          <option value="chi_sim">Simplified only</option>
+          <option value="chi_tra">Traditional only</option>
+          <option value="chi_sim+chi_tra+eng">Chinese + English</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Translation Backend</h3>
+      <div class="row">
+        <label>API URL:</label>
+        <input type="text" id="apiUrl" value="http://localhost:3001/translate" style="flex:1">
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Controls</h3>
+      <div class="row">
+        <button id="liveBtn" onclick="toggleLive()">Start Live (2 FPS)</button>
+        <button onclick="snapTranslate()">Snap Translate</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label>FPS:</label>
+        <input type="number" id="fpsInput" value="2" min="1" max="10" style="width:50px">
+        <label>Dedup (s):</label>
+        <input type="number" id="dedupInput" value="3" min="0" max="60" style="width:50px">
+      </div>
+      <div class="row" style="margin-top:4px; font-size:11px; color:#556677">
+        Hotkey: Space (when app is focused)
+      </div>
+    </div>
+  </div>
+
+  <div id="right">
+    <div id="feed-header">
+      <span>Translation Feed</span>
+      <button onclick="openFeedWindow()">Open in New Window</button>
+      <button onclick="clearFeed()">Clear</button>
+      <button onclick="copyAll()">Copy All</button>
+    </div>
+    <div id="feed"></div>
+  </div>
+</div>
+
+<div id="region-overlay" onmousedown="overlayMouseDown(event)" onmousemove="overlayMouseMove(event)" onmouseup="overlayMouseUp(event)"></div>
+<div id="region-rect"></div>
+
+<div id="modal">
+  <div id="modal-box">
+    <h3>Error Log</h3>
+    <div id="modal-content"></div>
+    <div id="modal-actions">
+      <button onclick="copyErrors()">Copy</button>
+      <button onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let stream = null, videoEl = null, liveInterval = null;
+let region = { x: 0, y: 0, w: 800, h: 200 };
+let worker = null, workerReady = false;
+let errors = [], lastText = '', lastTranslateTime = 0;
+let dragStart = null, dragging = false;
+const canvas = document.getElementById('preview-canvas');
+const ctx = canvas.getContext('2d');
+
+// ── Character width helpers ──────────────────────────────────────────────────
+// Returns true for CJK codepoints (counts as 2 display units)
+function isCJK(cp) {
+  return (cp >= 0x4E00 && cp <= 0x9FFF)   // CJK Unified Ideographs
+      || (cp >= 0x3400 && cp <= 0x4DBF)   // CJK Extension A
+      || (cp >= 0x20000 && cp <= 0x2A6DF) // CJK Extension B
+      || (cp >= 0x3040 && cp <= 0x30FF)   // Hiragana + Katakana
+      || (cp >= 0xAC00 && cp <= 0xD7AF)   // Hangul syllables
+      || (cp >= 0x3000 && cp <= 0x303F)   // CJK Symbols & Punctuation
+      || (cp >= 0xFF01 && cp <= 0xFF60);  // Fullwidth Latin / symbols
+}
+
+// WoW icon placeholder pattern: {CJK...} or [CJK...] – count as 2 units each
+const WOW_ICON_RE = /[{\[][^{}[\]]*[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af][^{}[\]]*[}\]]/g;
+
+// Calculate display width of a string using WoW chat display unit rules
+function displayWidth(str) {
+  let width = 0;
+  // Count icon placeholders as 2 units and remove them from the string
+  const stripped = str.replace(WOW_ICON_RE, () => { width += 2; return ''; });
+  // Count remaining characters
+  for (const ch of stripped) {
+    width += isCJK(ch.codePointAt(0)) ? 2 : 1;
+  }
+  return width;
+}
+
+// Wrap text so no line exceeds maxWidth display units.
+// Breaks at word boundaries (spaces); falls back to hard-break if a single
+// word is wider than maxWidth.
+function wrapToWidth(text, maxWidth) {
+  if (!maxWidth || displayWidth(text) <= maxWidth) return text;
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  let currentWidth = 0;
+  for (const word of words) {
+    const wordWidth = displayWidth(word);
+    const spaceWidth = current ? 1 : 0;
+    if (current && currentWidth + spaceWidth + wordWidth > maxWidth) {
+      lines.push(current);
+      current = word;
+      currentWidth = wordWidth;
+    } else {
+      current = current ? current + ' ' + word : word;
+      currentWidth += spaceWidth + wordWidth;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join('\n');
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+async function initWorker() {
+  setStatus('Loading OCR...');
+  worker = await Tesseract.createWorker(document.getElementById('ocrLang').value);
+  workerReady = true;
+  setStatus('OCR ready');
+}
+initWorker();
+
+document.getElementById('ocrLang').addEventListener('change', async () => {
+  workerReady = false;
+  if (worker) await worker.terminate();
+  await initWorker();
+});
+
+async function startCapture() {
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    videoEl = document.createElement('video');
+    videoEl.srcObject = stream;
+    await videoEl.play();
+    setStatus('Capture active');
+    document.getElementById('captureBtn').textContent = 'Restart Capture';
+    drawPreview();
+  } catch(e) { logError('Capture', e.message); }
+}
+
+function drawPreview() {
+  if (!videoEl || !stream) return;
+  const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  ctx.drawImage(videoEl, 0, 0, vw, vh, 0, 0, canvas.width, canvas.height);
+  const r = region;
+  const sx = (r.x / vw) * canvas.width, sy = (r.y / vh) * canvas.height;
+  const sw = (r.w / vw) * canvas.width, sh = (r.h / vh) * canvas.height;
+  ctx.strokeStyle = '#e2b96f'; ctx.lineWidth = 2;
+  ctx.strokeRect(sx, sy, sw, sh);
+  requestAnimationFrame(drawPreview);
+}
+
+function getCroppedCanvas() {
+  if (!videoEl) return null;
+  const off = document.createElement('canvas');
+  off.width = region.w; off.height = region.h;
+  off.getContext('2d').drawImage(videoEl, region.x, region.y, region.w, region.h, 0, 0, region.w, region.h);
+  return off;
+}
+
+async function snapTranslate() {
+  if (!workerReady) return setStatus('OCR not ready');
+  if (!stream) return setStatus('No capture - click Start Capture first');
+  const cropped = getCroppedCanvas();
+  if (!cropped) return;
+  setStatus('OCR running...');
+  try {
+    const { data: { text } } = await worker.recognize(cropped);
+    const cleaned = text.trim();
+    if (!cleaned) return setStatus('No text detected');
+    await processText(cleaned);
+  } catch(e) { logError('OCR', e.message); setStatus('OCR error'); }
+}
+
+async function processText(rawText) {
+  const dedup = parseInt(document.getElementById('dedupInput').value) * 1000;
+  const now = Date.now();
+  if (rawText === lastText && (now - lastTranslateTime) < dedup) { setStatus('No change'); return; }
+  lastText = rawText; lastTranslateTime = now;
+
+  const lines = splitChatLines(rawText);
+
+  // Step 1-2: calculate display width for each line, find max (= chat window width)
+  const maxWidth = lines.reduce((max, line) => Math.max(max, displayWidth(line)), 38);
+
+  setStatus('Translating ' + lines.length + ' line(s)...');
+  await Promise.all(lines.map(line => translateLine(line, maxWidth)));
+  setStatus('Done');
+}
+
+function splitChatLines(text) {
+  // Split on real OCR newlines first, then on WoW channel prefixes
+  const byNewline = text.split(/\r?\n/);
+  const result = [];
+  for (const segment of byNewline) {
+    // Split further on WoW channel boundaries
+    const parts = segment.split(
+      /(?=\[(?:\d+[\s\.:]|General|Guild|Party|Raid|Say|Yell|Whisper|Officer|Instance|BattleGround|Trade|World|System|Looking))/
+    );
+    for (const p of parts) {
+      const t = p.trim();
+      if (t) result.push(t);
+    }
+  }
+  return result;
+}
+
+async function translateLine(text, maxWidth) {
+  const url = document.getElementById('apiUrl').value;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, targetLanguage: 'en' })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'API error');
+    // Step 3-4: wrap translated English to never exceed maxWidth units
+    const wrapped = wrapToWidth(data.translatedText, maxWidth);
+    addFeedRow(text, wrapped);
+  } catch(e) {
+    logError('Translation', e.message + '\nText: ' + text);
+    addFeedRow(text, '[Translation failed]');
+  }
+}
+
+function addFeedRow(original, translated) {
+  const feed = document.getElementById('feed');
+  const ts = new Date().toLocaleTimeString();
+  const row = document.createElement('div');
+  row.className = 'chat-row';
+  row.innerHTML = '<div class="original">' + escHtml(original) + '</div>' +
+    '<div class="translated">' + escHtml(translated) + '</div>' +
+    '<div class="ts">' + ts + '</div>' +
+    '<button class="copy-btn" onclick="copyRow(this)">Copy</button>';
+  feed.appendChild(row);
+  row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function copyRow(btn) {
+  const row = btn.closest('.chat-row');
+  navigator.clipboard.writeText(
+    row.querySelector('.original').textContent + '\n\u2192 ' + row.querySelector('.translated').textContent
+  );
+}
+
+function clearFeed() { document.getElementById('feed').innerHTML = ''; }
+
+function copyAll() {
+  const rows = document.querySelectorAll('.chat-row');
+  const lines = Array.from(rows).map(r =>
+    r.querySelector('.original').textContent + '\n\u2192 ' + r.querySelector('.translated').textContent
+  );
+  navigator.clipboard.writeText(lines.join('\n\n'));
+}
+
+function openFeedWindow() {
+  const rows = document.querySelectorAll('.chat-row');
+  const content = Array.from(rows).map(r =>
+    '<div class="chat-row"><div class="original">' + r.querySelector('.original').innerHTML +
+    '</div><div class="translated">' + r.querySelector('.translated').innerHTML + '</div></div>'
+  ).join('');
+  const w = window.open('', '_blank', 'width=800,height=600');
+  w.document.write('<html><head><style>body{background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;padding:12px}.chat-row{background:#16213e;border:1px solid #0f3460;border-radius:4px;padding:8px;margin-bottom:4px}.original{color:#e2b96f;font-size:13px;white-space:pre-wrap;word-break:break-word}.translated{color:#a8d8a8;font-size:13px;margin-top:4px;padding-left:12px;white-space:pre-wrap;word-break:break-word}.translated::before{content:"\u2192 ";color:#4a7a4a}</style></head><body>' + content + '</body></html>');
+}
+
+function toggleLive() {
+  const btn = document.getElementById('liveBtn');
+  if (liveInterval) {
+    clearInterval(liveInterval);
+    liveInterval = null;
+    btn.textContent = 'Start Live (2 FPS)';
+    btn.classList.remove('active');
+    setStatus('Live stopped');
+  } else {
+    const fps = parseInt(document.getElementById('fpsInput').value) || 2;
+    liveInterval = setInterval(snapTranslate, Math.round(1000 / fps));
+    btn.textContent = 'Stop Live';
+    btn.classList.add('active');
+    setStatus('Live @ ' + fps + ' FPS');
+  }
+}
+
+function selectRegion() { document.getElementById('region-overlay').style.display = 'block'; }
+
+function overlayMouseDown(e) {
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragging = true;
+  const rect = document.getElementById('region-rect');
+  rect.style.display = 'block';
+  rect.style.left = e.clientX + 'px'; rect.style.top = e.clientY + 'px';
+  rect.style.width = '0'; rect.style.height = '0';
+}
+function overlayMouseMove(e) {
+  if (!dragging) return;
+  const rect = document.getElementById('region-rect');
+  rect.style.left = Math.min(e.clientX, dragStart.x) + 'px';
+  rect.style.top = Math.min(e.clientY, dragStart.y) + 'px';
+  rect.style.width = Math.abs(e.clientX - dragStart.x) + 'px';
+  rect.style.height = Math.abs(e.clientY - dragStart.y) + 'px';
+}
+function overlayMouseUp(e) {
+  dragging = false;
+  document.getElementById('region-overlay').style.display = 'none';
+  document.getElementById('region-rect').style.display = 'none';
+  if (!videoEl) return;
+  const scaleX = videoEl.videoWidth / window.screen.width;
+  const scaleY = videoEl.videoHeight / window.screen.height;
+  region.x = Math.round(Math.min(e.clientX, dragStart.x) * scaleX);
+  region.y = Math.round(Math.min(e.clientY, dragStart.y) * scaleY);
+  region.w = Math.round(Math.abs(e.clientX - dragStart.x) * scaleX);
+  region.h = Math.round(Math.abs(e.clientY - dragStart.y) * scaleY);
+  document.getElementById('rx').value = region.x;
+  document.getElementById('ry').value = region.y;
+  document.getElementById('rw').value = region.w;
+  document.getElementById('rh').value = region.h;
+}
+
+['rx','ry','rw','rh'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    region.x = parseInt(document.getElementById('rx').value) || 0;
+    region.y = parseInt(document.getElementById('ry').value) || 0;
+    region.w = parseInt(document.getElementById('rw').value) || 800;
+    region.h = parseInt(document.getElementById('rh').value) || 200;
+  });
+});
+
+function loadPresets() {
+  const presets = JSON.parse(localStorage.getItem('presets') || '{}');
+  const sel = document.getElementById('presetSelect');
+  sel.innerHTML = '';
+  Object.keys(presets).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+}
+function savePreset() {
+  const name = document.getElementById('presetName').value.trim();
+  if (!name) return;
+  const presets = JSON.parse(localStorage.getItem('presets') || '{}');
+  presets[name] = { ...region };
+  localStorage.setItem('presets', JSON.stringify(presets));
+  loadPresets();
+  document.getElementById('presetSelect').value = name;
+}
+function loadPreset() {
+  const name = document.getElementById('presetSelect').value;
+  const presets = JSON.parse(localStorage.getItem('presets') || '{}');
+  if (!presets[name]) return;
+  Object.assign(region, presets[name]);
+  document.getElementById('rx').value = region.x;
+  document.getElementById('ry').value = region.y;
+  document.getElementById('rw').value = region.w;
+  document.getElementById('rh').value = region.h;
+  document.getElementById('presetName').value = name;
+}
+function deletePreset() {
+  const name = document.getElementById('presetSelect').value;
+  const presets = JSON.parse(localStorage.getItem('presets') || '{}');
+  delete presets[name];
+  localStorage.setItem('presets', JSON.stringify(presets));
+  loadPresets();
+}
+loadPresets();
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && document.activeElement === document.body) {
+    e.preventDefault();
+    snapTranslate();
+  }
+});
+
+function logError(type, msg) {
+  errors.push({ type, msg, time: new Date().toLocaleTimeString() });
+  const btn = document.getElementById('errBtn');
+  btn.textContent = 'Errors (' + errors.length + ')';
+  btn.classList.add('has-errors');
+}
+function openErrors() {
+  document.getElementById('modal-content').textContent =
+    errors.map(e => '[' + e.time + '] ' + e.type + ': ' + e.msg).join('\n\n');
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+function copyErrors() {
+  navigator.clipboard.writeText(document.getElementById('modal-content').textContent);
+}
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
