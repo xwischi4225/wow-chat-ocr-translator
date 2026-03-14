@@ -23,11 +23,25 @@ actor {
     OutCall.transform(input);
   };
 
+  func findMarker(json : Text) : ?Text {
+    // Try with space after colon first (e.g. "translatedText": "...")
+    let markerSpace = "\"translatedText\": \"";
+    let partsSpace = json.split(#text markerSpace);
+    ignore partsSpace.next();
+    switch (partsSpace.next()) {
+      case (?after) { ?after };
+      case null {
+        // Fallback: no space (e.g. "translatedText":"...")
+        let marker = "\"translatedText\":\"";
+        let parts = json.split(#text marker);
+        ignore parts.next();
+        parts.next();
+      };
+    };
+  };
+
   func extractTranslatedText(json : Text) : Text {
-    let marker = "\"translatedText\":\"";
-    let parts = json.split(#text marker);
-    ignore parts.next();
-    switch (parts.next()) {
+    switch (findMarker(json)) {
       case null { Runtime.trap("translatedText not found in response: " # json) };
       case (?after) {
         var result = "";
@@ -39,7 +53,9 @@ actor {
             case (?'\\') {
               switch (chars.next()) {
                 case null { break extractLoop };
-                case (?c) { result #= Text.fromChar(c) };
+                case (?'n') { result #= "\n" };
+                case (?'t') { result #= "\t" };
+                case (?c)   { result #= Text.fromChar(c) };
               };
             };
             case (?c) { result #= Text.fromChar(c) };
@@ -64,6 +80,7 @@ actor {
     for (c in text.chars()) {
       if (c == '\"') { safeText #= "\\\"" }
       else if (c == '\\') { safeText #= "\\\\" }
+      else if (c == '\n') { safeText #= "\\n" }
       else { safeText #= Text.fromChar(c) };
     };
 
