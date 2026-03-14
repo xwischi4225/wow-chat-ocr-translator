@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 interface Props {
@@ -41,26 +42,31 @@ export function TranslationFeed({
   onTargetLanguageChange,
   onOpenDisplayWindow,
 }: Props) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const prevLengthRef = useRef(0);
+
+  // Auto-scroll to bottom when new entries arrive
+  useEffect(() => {
+    if (entries.length !== prevLengthRef.current) {
+      prevLengthRef.current = entries.length;
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+
   const handleCopyAll = () => {
     if (entries.length === 0) {
       toast.info("No entries to copy");
       return;
     }
-    const text = entries
+    const text = [...entries]
+      .reverse()
       .map(
         (e) =>
           `[${formatTime(e.timestamp)}] ${e.original}\n\u2192 ${e.translated}`,
       )
-      .join("\n\n");
+      .join("\n");
     navigator.clipboard.writeText(text);
     toast.success(`Copied ${entries.length} entries`);
-  };
-
-  const handleCopyEntry = (entry: FeedEntry) => {
-    navigator.clipboard.writeText(
-      `${entry.original}\n\u2192 ${entry.translated}`,
-    );
-    toast.success("Copied to clipboard");
   };
 
   return (
@@ -157,86 +163,85 @@ export function TranslationFeed({
         </div>
       </div>
 
-      {/* Feed entries — independently scrollable */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="p-3 space-y-2.5">
+      {/* Chat-style feed */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 font-mono text-sm">
+        {entries.length === 0 ? (
+          <div
+            className="flex flex-col items-center justify-center h-full py-16 text-center"
+            data-ocid="feed.empty_state"
+          >
+            <MessageSquare className="h-10 w-10 text-muted-foreground/30 mb-3" />
+            <p className="text-muted-foreground/60 text-sm">
+              No translations yet
+            </p>
+            <p className="text-muted-foreground/40 text-xs mt-1">
+              Start capture and click Snap or Start Live
+            </p>
+          </div>
+        ) : (
           <AnimatePresence initial={false}>
-            {entries.length === 0 ? (
+            {[...entries].reverse().map((entry, i) => (
               <motion.div
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center py-16 text-center"
-                data-ocid="feed.empty_state"
+                key={entry.id}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="group leading-snug py-0.5 hover:bg-white/5 rounded px-1 -mx-1"
+                data-ocid={`feed.item.${i + 1}`}
               >
-                <MessageSquare className="h-10 w-10 text-muted-foreground/30 mb-3" />
-                <p className="text-muted-foreground/60 text-sm">
-                  No translations yet
-                </p>
-                <p className="text-muted-foreground/40 text-xs mt-1">
-                  Start capture and click Snap or Start Live
-                </p>
-              </motion.div>
-            ) : (
-              entries.map((entry, i) => (
-                <motion.div
-                  key={entry.id}
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                  className="group relative bg-card/50 border border-border/40 rounded-lg p-3 hover:border-border/80 transition-colors"
-                  data-ocid={`feed.item.${i + 1}`}
-                >
-                  {/* Header row */}
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-muted-foreground/60">
-                        {formatTime(entry.timestamp)}
-                      </span>
-                      {entry.detectedLanguage && (
-                        <Badge
-                          variant="outline"
-                          className="text-xs py-0 px-1.5 h-4 border-primary/30 text-primary/70"
-                        >
-                          {entry.detectedLanguage}
-                        </Badge>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
-                      onClick={() => handleCopyEntry(entry)}
-                    >
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  {/* Original Chinese */}
-                  <p className="font-mono text-sm text-muted-foreground leading-relaxed mb-2 pl-2 border-l-2 border-primary/30">
+                {/* Original line */}
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-muted-foreground/50 text-xs shrink-0 tabular-nums">
+                    [{formatTime(entry.timestamp)}]
+                  </span>
+                  {entry.detectedLanguage && (
+                    <span className="text-primary/50 text-xs shrink-0">
+                      {entry.detectedLanguage}
+                    </span>
+                  )}
+                  <span className="text-yellow-300/90 break-words">
                     {entry.original}
-                  </p>
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-auto opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-muted-foreground shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${entry.original}\n\u2192 ${entry.translated}`,
+                      );
+                      toast.success("Copied");
+                    }}
+                    title="Copy"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
 
-                  {/* Translation */}
+                {/* Translation line */}
+                <div className="flex items-baseline gap-1.5 pl-4">
+                  <span className="text-muted-foreground/40 text-xs shrink-0">
+                    →
+                  </span>
                   {entry.isLoading ? (
-                    <div
-                      className="flex items-center gap-2 text-muted-foreground/60 text-sm"
+                    <span
+                      className="flex items-center gap-1 text-muted-foreground/50 text-xs"
                       data-ocid="feed.loading_state"
                     >
                       <Loader2 className="h-3 w-3 animate-spin" />
-                      <span className="text-xs">Translating...</span>
-                    </div>
+                      translating…
+                    </span>
                   ) : (
-                    <p className="text-sm text-foreground/90 leading-relaxed pl-2 border-l-2 border-accent/40">
+                    <span className="text-foreground/85 break-words">
                       {entry.translated}
-                    </p>
+                    </span>
                   )}
-                </motion.div>
-              ))
-            )}
+                </div>
+              </motion.div>
+            ))}
           </AnimatePresence>
-        </div>
+        )}
+        <div ref={bottomRef} />
       </div>
     </div>
   );
