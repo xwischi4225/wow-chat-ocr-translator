@@ -53,6 +53,16 @@ const queryClient = new QueryClient();
 const PRESETS_KEY = "wow-ocr-presets";
 const CHANNEL_NAME = "wow-ocr-feed";
 
+/**
+ * Split OCR text blob into individual WoW chat lines.
+ * WoW chat lines start with [digit or [digit. e.g. [7. or [7
+ */
+function splitChatLines(raw: string): string[] {
+  // Split before each occurrence of [ followed by a digit
+  const parts = raw.split(/(?=\[\d)/);
+  return parts.map((s) => s.trim()).filter((s) => s.length > 3);
+}
+
 function MainApp() {
   // --- Screen capture ---
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -215,45 +225,62 @@ function MainApp() {
         }
         lastOcrTextRef.current = text;
 
-        const id = `entry-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const placeholderEntry: FeedEntry = {
-          id,
+        // Split into individual WoW chat lines
+        const lines = splitChatLines(text);
+        if (lines.length === 0) {
+          setOcrStatus("ready");
+          return;
+        }
+
+        // Create placeholder entries for all lines
+        const newEntries: FeedEntry[] = lines.map((line) => ({
+          id: `entry-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           timestamp: new Date(),
-          original: text,
+          original: line,
           translated: "",
           isLoading: true,
-        };
+        }));
 
         if (!isFeedPausedRef.current) {
-          setFeedEntries((prev) => [placeholderEntry, ...prev].slice(0, 100));
+          setFeedEntries((prev) => [...newEntries, ...prev].slice(0, 200));
         }
 
-        try {
-          const translated = await translateText({
-            text,
-            targetLanguage: targetLang,
-          });
-          setFeedEntries((prev) =>
-            prev.map((e) =>
-              e.id === id ? { ...e, translated, isLoading: false } : e,
-            ),
-          );
-        } catch (translateErr) {
-          const err = translateErr as Error;
-          const detail = err.message || String(translateErr);
-          addError(
-            "Translation",
-            "Failed to translate text",
-            `Text: ${text.slice(0, 200)}\nError: ${detail}`,
-          );
-          setFeedEntries((prev) =>
-            prev.map((e) =>
-              e.id === id
-                ? { ...e, translated: "[Translation failed]", isLoading: false }
-                : e,
-            ),
-          );
-        }
+        // Translate each line in parallel
+        await Promise.all(
+          newEntries.map(async (entry) => {
+            try {
+              const translated = await translateText({
+                text: entry.original,
+                targetLanguage: targetLang,
+              });
+              setFeedEntries((prev) =>
+                prev.map((e) =>
+                  e.id === entry.id
+                    ? { ...e, translated, isLoading: false }
+                    : e,
+                ),
+              );
+            } catch (translateErr) {
+              const err = translateErr as Error;
+              addError(
+                "Translation",
+                "Failed to translate text",
+                `Text: ${entry.original.slice(0, 200)}\nError: ${err.message}`,
+              );
+              setFeedEntries((prev) =>
+                prev.map((e) =>
+                  e.id === entry.id
+                    ? {
+                        ...e,
+                        translated: "[Translation failed]",
+                        isLoading: false,
+                      }
+                    : e,
+                ),
+              );
+            }
+          }),
+        );
       } catch (err) {
         const msg = (err as Error).message;
         addError(

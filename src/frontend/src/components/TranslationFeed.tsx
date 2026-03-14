@@ -187,20 +187,20 @@ export function TranslationFeed({
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="group leading-snug py-0.5 hover:bg-white/5 rounded px-1 -mx-1"
+                className="group leading-snug py-0.5 hover:bg-white/5 rounded px-1 -mx-1 border-b border-border/10 last:border-b-0"
                 data-ocid={`feed.item.${i + 1}`}
               >
-                {/* Original line */}
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-muted-foreground/50 text-xs shrink-0 tabular-nums">
+                {/* Original line — timestamp small & dimmed, then the chat line in yellow */}
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <span className="text-muted-foreground/40 text-[10px] shrink-0 tabular-nums">
                     [{formatTime(entry.timestamp)}]
                   </span>
                   {entry.detectedLanguage && (
-                    <span className="text-primary/50 text-xs shrink-0">
+                    <span className="text-primary/50 text-[10px] shrink-0">
                       {entry.detectedLanguage}
                     </span>
                   )}
-                  <span className="text-yellow-300/90 break-words">
+                  <span className="text-yellow-300/90 break-all leading-relaxed">
                     {entry.original}
                   </span>
                   <button
@@ -218,8 +218,8 @@ export function TranslationFeed({
                   </button>
                 </div>
 
-                {/* Translation line */}
-                <div className="flex items-baseline gap-1.5 pl-4">
+                {/* Translation line — indented with arrow */}
+                <div className="flex items-baseline gap-1.5 pl-4 pb-0.5">
                   <span className="text-muted-foreground/40 text-xs shrink-0">
                     →
                   </span>
@@ -232,7 +232,7 @@ export function TranslationFeed({
                       translating…
                     </span>
                   ) : (
-                    <span className="text-foreground/85 break-words">
+                    <span className="text-foreground/85 break-words leading-relaxed">
                       {entry.translated}
                     </span>
                   )}
