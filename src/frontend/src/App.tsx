@@ -55,12 +55,51 @@ const CHANNEL_NAME = "wow-ocr-feed";
 
 /**
  * Split OCR text blob into individual WoW chat lines.
- * WoW chat lines start with [digit or [digit. e.g. [7. or [7
+ *
+ * OCR produces a flat text blob. We use two strategies to split it into rows:
+ *
+ * 1. Real newlines – Tesseract often preserves line breaks from the image.
+ * 2. WoW channel boundary regex – catches cases where OCR merged lines.
+ *    WoW chat lines start with one of:
+ *      [N.  – numbered channels:  [1. General], [2. Trade], [7. LookingForGroup]
+ *      [N]  – numbered no dot:    [7 LookingForGroup]
+ *      [Guild] [Party] [Raid] [Say] [Yell] [Whisper] [Officer]
+ *      [Instance] [BattleGround] [General] [Trade] [Local] [World] [System]
+ *      [pkngForGroup] etc. – OCR mis-reads of Looking
  */
 function splitChatLines(raw: string): string[] {
-  // Split before each occurrence of [ followed by a digit
-  const parts = raw.split(/(?=\[\d)/);
-  return parts.map((s) => s.trim()).filter((s) => s.length > 3);
+  // Lookahead: split before [ followed by digit OR known WoW channel name
+  const CHANNEL_BOUNDARY =
+    /(?=\[(?:\d|Guild|Party|Raid|Say|Yell|Whisper|Officer|Instance|Battle|General|Trade|Local|Looking|World|System))/i;
+
+  // Step 1: split on real newlines
+  const byLine = raw.split(/\r?\n/);
+
+  const result: string[] = [];
+  for (const line of byLine) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Step 2: within each line, also split on WoW channel boundaries
+    const subParts = trimmed
+      .split(CHANNEL_BOUNDARY)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 3);
+    if (subParts.length > 0) {
+      result.push(...subParts);
+    } else if (trimmed.length > 3) {
+      result.push(trimmed);
+    }
+  }
+
+  // Fallback: if newlines gave nothing, split purely on channel boundaries
+  if (result.length === 0) {
+    return raw
+      .split(CHANNEL_BOUNDARY)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 3);
+  }
+
+  return result;
 }
 
 function MainApp() {
